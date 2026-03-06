@@ -1,0 +1,159 @@
+services:
+
+  # ─── Laravel App (PHP-FPM) ───────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wiki_app
+    restart: unless-stopped
+    volumes:
+      - .:/var/www
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    environment:
+      - APP_ENV=${APP_ENV:-local}
+      # Переопределяем хосты для работы внутри Docker-сети
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - wiki_net
+
+  # ─── Nginx ───────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: wiki_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8084}:80"
+    volumes:
+      - .:/var/www
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - wiki_net
+
+  # ─── PostgreSQL + pgvector ────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: wiki_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-wiki}
+      POSTGRES_USER: ${DB_USERNAME:-wiki}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${DB_PORT_EXPOSE:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-wiki} -d ${DB_DATABASE:-wiki}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - wiki_net
+
+  # ─── Redis (queue + cache) ────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: wiki_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT_EXPOSE:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - wiki_net
+
+  # ─── Queue Worker ─────────────────────────────────────────────────────────────
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wiki_queue
+    restart: unless-stopped
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    volumes:
+      - .:/var/www
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - wiki_net
+
+  # ─── pgAdmin 4 (веб-интерфейс для PostgreSQL) ────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: wiki_pgadmin
+    restart: unless-stopped
+    user: root                                   # позволяет pgAdmin самому выставить права на /var/lib/pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"        # single-user mode, без логина
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_WTF_CSRF_ENABLED: "False"   # убирает tempnam-предупреждения в dev-режиме
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro  # авто-подключение к БД
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - wiki_net
+
+  # ─── Ollama (локальный LLM, опционально) ─────────────────────────────────────
+  # Раскомментируйте если хотите запускать модели локально (требует GPU/CPU ресурсов)
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: wiki_ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: 1
+  #   #           capabilities: [gpu]
+  #   networks:
+  #     - wiki_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+  # ollama_data:
+
+networks:
+  wiki_net:
+    driver: bridge

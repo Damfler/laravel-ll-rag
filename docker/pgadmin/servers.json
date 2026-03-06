@@ -1,0 +1,14 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "Wiki PostgreSQL",
+            "Group": "Docker",
+            "Host": "postgres",
+            "Port": 5432,
+            "MaintenanceDB": "wiki",
+            "Username": "wiki",
+            "PassFile": "/pgpassfile",
+            "SSLMode": "prefer"
+        }
+    }
+}
