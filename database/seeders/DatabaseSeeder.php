@@ -19,19 +19,31 @@ class DatabaseSeeder extends Seeder
         $this->call(RoleSeeder::class);
 
         // Тестовый администратор
-        $admin = User::factory()->create([
-            'name'         => 'Admin',
-            'email'        => 'admin@wiki.local',
-            'default_role' => 'admin',
-        ]);
-        $admin->assignRole('admin');
+        $admin = User::firstOrCreate(
+            ['email' => 'admin@wiki.local'],
+            [
+                'name'              => 'Admin',
+                'email_verified_at' => now(),
+                'password'          => bcrypt('password'),
+                'default_role'      => 'admin',
+            ]
+        );
+        if (!$admin->hasRole('admin')) {
+            $admin->assignRole('admin');
+        }
 
         // Тестовый редактор
-        $editor = User::factory()->create([
-            'name'         => 'Editor',
-            'email'        => 'editor@wiki.local',
-            'default_role' => 'editor',
-        ]);
-        $editor->assignRole('editor');
+        $editor = User::firstOrCreate(
+            ['email' => 'editor@wiki.local'],
+            [
+                'name'              => 'Editor',
+                'email_verified_at' => now(),
+                'password'          => bcrypt('password'),
+                'default_role'      => 'editor',
+            ]
+        );
+        if (!$editor->hasRole('editor')) {
+            $editor->assignRole('editor');
+        }
     }
 }

@@ -18,5 +18,10 @@ export default {
         },
     },
 
+    safelist: [
+        'w-14',
+        'w-60',
+    ],
+
     plugins: [forms],
 };

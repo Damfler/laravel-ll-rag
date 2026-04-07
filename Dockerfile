@@ -1,17 +1,15 @@
 FROM php:8.4-fpm
 
-# System dependencies
+# install-php-extensions — надёжная установка расширений без проблем с PECL
+COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
+
+# System dependencies + PHP extensions
 RUN apt-get update && apt-get install -y \
     git \
     curl \
-    libpq-dev \
-    libzip-dev \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
     zip \
     unzip \
-    && docker-php-ext-install \
+    && install-php-extensions \
         pdo \
         pdo_pgsql \
         pgsql \
@@ -21,8 +19,7 @@ RUN apt-get update && apt-get install -y \
         pcntl \
         bcmath \
         xml \
-    && pecl install redis \
-    && docker-php-ext-enable redis \
+        redis \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

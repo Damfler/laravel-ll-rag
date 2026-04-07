@@ -31,7 +31,7 @@ services:
     container_name: wiki_nginx
     restart: unless-stopped
     ports:
-      - "${NGINX_PORT:-8084}:80"
+      - "${NGINX_PORT:-8086}:80"
     volumes:
       - .:/var/www
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
@@ -53,7 +53,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "${DB_PORT_EXPOSE:-5432}:5432"
+      - "${DB_PORT_EXPOSE:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-wiki} -d ${DB_DATABASE:-wiki}"]
       interval: 5s
@@ -71,7 +71,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "${REDIS_PORT_EXPOSE:-6379}:6379"
+      - "${REDIS_PORT_EXPOSE:-6380}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -120,7 +120,7 @@ services:
       - pgadmin_data:/var/lib/pgadmin
       - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro  # авто-подключение к БД
     ports:
-      - "${PGADMIN_PORT:-5050}:80"
+      - "${PGADMIN_PORT:-5051}:80"
     depends_on:
       postgres:
         condition: service_healthy

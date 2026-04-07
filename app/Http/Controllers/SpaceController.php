@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Group;
 use App\Models\Space;
+use App\Models\Tag;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -25,7 +27,9 @@ class SpaceController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Spaces/Create');
+        return Inertia::render('Spaces/Create', [
+            'groups' => Group::orderBy('name')->get(['id', 'name']),
+        ]);
     }
 
     public function store(Request $request)
@@ -35,13 +39,23 @@ class SpaceController extends Controller
             'description' => ['nullable', 'string', 'max:500'],
             'icon'        => ['nullable', 'string', 'max:10'],
             'color'       => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'is_public'   => ['boolean'],
+            'visibility'  => ['required', 'in:public,restricted,private'],
+            'group_ids'   => ['nullable', 'array'],
+            'group_ids.*' => ['exists:groups,id'],
         ]);
+
+        $groupIds = $validated['group_ids'] ?? [];
+        unset($validated['group_ids']);
 
         $validated['owner_id'] = auth()->id();
         $validated['slug']     = Str::slug($validated['name']);
+        $validated['icon']     = $validated['icon'] ?? '📁';
 
         $space = Space::create($validated);
+
+        if ($validated['visibility'] === Space::VISIBILITY_RESTRICTED && $groupIds) {
+            $space->groups()->sync($groupIds);
+        }
 
         return redirect()->route('spaces.show', $space)
             ->with('success', 'Раздел успешно создан.');
@@ -52,13 +66,21 @@ class SpaceController extends Controller
         $this->authorizeAccess($space);
 
         $pages = $space->rootPages()
-            ->with(['children' => fn ($q) => $q->with('children')->published()])
+            ->with([
+                'tags',
+                'children' => fn ($q) => $q->with(['children', 'tags'])->published(),
+            ])
             ->published()
             ->get();
+
+        $tags = Tag::whereHas('pages', fn ($q) => $q->where('space_id', $space->id))
+            ->orderBy('name')
+            ->get(['id', 'name', 'color']);
 
         return Inertia::render('Spaces/Show', [
             'space' => $space->load('owner'),
             'pages' => $pages,
+            'tags'  => $tags,
         ]);
     }
 
@@ -67,7 +89,8 @@ class SpaceController extends Controller
         $this->authorize('update', $space);
 
         return Inertia::render('Spaces/Edit', [
-            'space' => $space,
+            'space'  => $space->load('groups'),
+            'groups' => Group::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -80,10 +103,20 @@ class SpaceController extends Controller
             'description' => ['nullable', 'string', 'max:500'],
             'icon'        => ['nullable', 'string', 'max:10'],
             'color'       => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'is_public'   => ['boolean'],
+            'visibility'  => ['required', 'in:public,restricted,private'],
+            'group_ids'   => ['nullable', 'array'],
+            'group_ids.*' => ['exists:groups,id'],
         ]);
 
+        $groupIds          = $validated['group_ids'] ?? [];
+        $validated['icon'] = $validated['icon'] ?? $space->icon ?? '📁';
+        unset($validated['group_ids']);
+
         $space->update($validated);
+
+        $space->groups()->sync(
+            $validated['visibility'] === Space::VISIBILITY_RESTRICTED ? $groupIds : []
+        );
 
         return redirect()->route('spaces.show', $space)
             ->with('success', 'Раздел обновлён.');
@@ -101,8 +134,24 @@ class SpaceController extends Controller
 
     private function authorizeAccess(Space $space): void
     {
-        if (! $space->is_public && $space->owner_id !== auth()->id() && ! auth()->user()->isAdmin()) {
-            abort(403);
+        $user = auth()->user();
+
+        if ($user->isAdmin() || $space->owner_id === $user->id) {
+            return;
         }
+
+        if ($space->visibility === Space::VISIBILITY_PUBLIC) {
+            return;
+        }
+
+        if ($space->visibility === Space::VISIBILITY_RESTRICTED) {
+            $userGroupIds  = $user->groups()->pluck('groups.id');
+            $spaceGroupIds = $space->groups()->pluck('groups.id');
+            if ($userGroupIds->intersect($spaceGroupIds)->isNotEmpty()) {
+                return;
+            }
+        }
+
+        abort(403);
     }
 }

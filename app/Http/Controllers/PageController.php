@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Page;
+use App\Models\PageVersion;
 use App\Models\Space;
 use App\Models\Tag;
 use Illuminate\Http\Request;
@@ -30,25 +31,24 @@ class PageController extends Controller
         $this->authorize('editor', $space);
 
         $validated = $request->validate([
-            'title'       => ['required', 'string', 'max:255'],
-            'content'     => ['nullable', 'array'],
-            'content_text'=> ['nullable', 'string'],
-            'parent_id'   => ['nullable', 'exists:pages,id'],
-            'is_published'=> ['boolean'],
-            'tags'        => ['nullable', 'array'],
-            'tags.*'      => ['string', 'max:50'],
+            'title'        => ['required', 'string', 'max:255'],
+            'content'      => ['nullable', 'array'],
+            'content_text' => ['nullable', 'string'],
+            'parent_id'    => ['nullable', 'exists:pages,id'],
+            'is_published' => ['boolean'],
+            'tags'         => ['nullable', 'array'],
+            'tags.*'       => ['string', 'max:50'],
         ]);
 
-        $validated['author_id']  = auth()->id();
-        $validated['space_id']   = $space->id;
-        $validated['slug']       = $this->uniqueSlug($space, $validated['title']);
+        $validated['author_id'] = auth()->id();
+        $validated['space_id']  = $space->id;
+        $validated['slug']      = $this->uniqueSlug($space, $validated['title']);
 
         $tags = $validated['tags'] ?? [];
         unset($validated['tags']);
 
         $page = Page::create($validated);
 
-        // Сохраняем теги (создаём если нет)
         $tagIds = collect($tags)->map(fn ($name) => Tag::firstOrCreate(
             ['slug' => Str::slug($name)],
             ['name' => $name]
@@ -56,8 +56,7 @@ class PageController extends Controller
 
         $page->tags()->sync($tagIds);
 
-        // Первая версия
-        \App\Models\PageVersion::create([
+        PageVersion::create([
             'page_id'        => $page->id,
             'author_id'      => auth()->id(),
             'title'          => $page->title,
@@ -91,10 +90,10 @@ class PageController extends Controller
         $this->authorize('editor', $space);
 
         return Inertia::render('Wiki/Edit', [
-            'space'  => $space,
-            'page'   => $page->load('tags'),
-            'pages'  => $space->pages()->select('id', 'title', 'parent_id')->where('id', '!=', $page->id)->get(),
-            'tags'   => Tag::orderBy('name')->get(),
+            'space' => $space,
+            'page'  => $page->load('tags'),
+            'pages' => $space->pages()->select('id', 'title', 'parent_id')->where('id', '!=', $page->id)->get(),
+            'tags'  => Tag::orderBy('name')->get(),
         ]);
     }
 
@@ -103,22 +102,24 @@ class PageController extends Controller
         $this->authorize('editor', $space);
 
         $validated = $request->validate([
-            'title'        => ['required', 'string', 'max:255'],
-            'content'      => ['nullable', 'array'],
-            'content_text' => ['nullable', 'string'],
-            'parent_id'    => ['nullable', 'exists:pages,id'],
-            'is_published' => ['boolean'],
-            'tags'         => ['nullable', 'array'],
-            'tags.*'       => ['string', 'max:50'],
+            'title'          => ['required', 'string', 'max:255'],
+            'content'        => ['nullable', 'array'],
+            'content_text'   => ['nullable', 'string'],
+            'parent_id'      => ['nullable', 'exists:pages,id'],
+            'is_published'   => ['boolean'],
+            'tags'           => ['nullable', 'array'],
+            'tags.*'         => ['string', 'max:50'],
             'change_summary' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $tags = $validated['tags'] ?? [];
+        $tags          = $validated['tags'] ?? [];
+        $changeSummary = $validated['change_summary'] ?? null;
         unset($validated['tags'], $validated['change_summary']);
 
         $validated['last_edited_by'] = auth()->id();
 
-        $page->update($validated);
+        // updateQuietly — пропускаем observer, создаём версию вручную (с change_summary)
+        $page->updateQuietly($validated);
 
         $tagIds = collect($tags)->map(fn ($name) => Tag::firstOrCreate(
             ['slug' => Str::slug($name)],
@@ -126,6 +127,17 @@ class PageController extends Controller
         ))->pluck('id');
 
         $page->tags()->sync($tagIds);
+
+        $nextNumber = ($page->versions()->max('version_number') ?? 0) + 1;
+        PageVersion::create([
+            'page_id'        => $page->id,
+            'author_id'      => auth()->id(),
+            'title'          => $page->title,
+            'content'        => $page->content,
+            'content_text'   => $page->content_text,
+            'version_number' => $nextNumber,
+            'change_summary' => $changeSummary,
+        ]);
 
         return redirect()->route('pages.show', [$space, $page])
             ->with('success', 'Страница сохранена.');
@@ -146,8 +158,51 @@ class PageController extends Controller
         return Inertia::render('Wiki/History', [
             'space'    => $space,
             'page'     => $page,
-            'versions' => $page->versions()->with('author')->paginate(20),
+            'versions' => $page->versions()->with('author')->orderByDesc('version_number')->paginate(20),
         ]);
+    }
+
+    public function diff(Request $request, Space $space, Page $page): Response
+    {
+        $versionA = $page->versions()->with('author')->findOrFail($request->query('from'));
+        $versionB = $request->query('to')
+            ? $page->versions()->with('author')->findOrFail($request->query('to'))
+            : null;
+
+        // Если to не указан — сравниваем с текущей версией страницы
+        return Inertia::render('Wiki/Diff', [
+            'space'    => $space,
+            'page'     => $page,
+            'versionA' => $versionA,
+            'versionB' => $versionB,
+        ]);
+    }
+
+    public function restore(Space $space, Page $page, PageVersion $version)
+    {
+        $this->authorize('editor', $space);
+
+        $nextNumber = ($page->versions()->max('version_number') ?? 0) + 1;
+
+        $page->updateQuietly([
+            'title'          => $version->title,
+            'content'        => $version->content,
+            'content_text'   => $version->content_text,
+            'last_edited_by' => auth()->id(),
+        ]);
+
+        PageVersion::create([
+            'page_id'        => $page->id,
+            'author_id'      => auth()->id(),
+            'title'          => $version->title,
+            'content'        => $version->content,
+            'content_text'   => $version->content_text,
+            'version_number' => $nextNumber,
+            'change_summary' => "Откат к версии #{$version->version_number}",
+        ]);
+
+        return redirect()->route('pages.show', [$space, $page])
+            ->with('success', "Страница откатана к версии #{$version->version_number}.");
     }
 
     private function uniqueSlug(Space $space, string $title): string

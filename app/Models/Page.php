@@ -70,6 +70,13 @@ class Page extends Model
         return $this->belongsToMany(Tag::class);
     }
 
+    // ─── Роутинг по slug ─────────────────────────────────────────────────────
+
+    public function getRouteKeyName(): string
+    {
+        return 'slug';
+    }
+
     // ─── Авто-слаг и версия ───────────────────────────────────────────────────
 
     protected static function booted(): void

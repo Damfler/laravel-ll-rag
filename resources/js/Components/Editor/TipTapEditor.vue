@@ -1,14 +1,14 @@
 <template>
-    <div class="tiptap-wrapper">
-        <!-- Toolbar -->
-        <div v-if="editor" class="tiptap-toolbar">
-            <button @click="editor.chain().focus().toggleBold().run()" :class="{ active: editor.isActive('bold') }" title="Bold">
+    <div :class="editable ? 'tiptap-wrapper' : 'tiptap-view'">
+        <!-- Toolbar (только в режиме редактирования) -->
+        <div v-if="editor && editable" class="tiptap-toolbar">
+            <button type="button" @click="editor.chain().focus().toggleBold().run()" :class="{ active: editor.isActive('bold') }" title="Bold">
                 <strong>B</strong>
             </button>
-            <button @click="editor.chain().focus().toggleItalic().run()" :class="{ active: editor.isActive('italic') }" title="Italic">
+            <button type="button" @click="editor.chain().focus().toggleItalic().run()" :class="{ active: editor.isActive('italic') }" title="Italic">
                 <em>I</em>
             </button>
-            <button @click="editor.chain().focus().toggleStrike().run()" :class="{ active: editor.isActive('strike') }" title="Strikethrough">
+            <button type="button" @click="editor.chain().focus().toggleStrike().run()" :class="{ active: editor.isActive('strike') }" title="Strikethrough">
                 <s>S</s>
             </button>
 
@@ -17,6 +17,7 @@
             <button
                 v-for="level in [1, 2, 3]"
                 :key="level"
+                type="button"
                 @click="editor.chain().focus().toggleHeading({ level }).run()"
                 :class="{ active: editor.isActive('heading', { level }) }"
                 :title="`Heading ${level}`"
@@ -26,29 +27,54 @@
 
             <span class="divider" />
 
-            <button @click="editor.chain().focus().toggleBulletList().run()" :class="{ active: editor.isActive('bulletList') }" title="Bullet list">
+            <button type="button" @click="editor.chain().focus().toggleBulletList().run()" :class="{ active: editor.isActive('bulletList') }" title="Bullet list">
                 ≡
             </button>
-            <button @click="editor.chain().focus().toggleOrderedList().run()" :class="{ active: editor.isActive('orderedList') }" title="Numbered list">
+            <button type="button" @click="editor.chain().focus().toggleOrderedList().run()" :class="{ active: editor.isActive('orderedList') }" title="Numbered list">
                 1.
             </button>
-            <button @click="editor.chain().focus().toggleTaskList().run()" :class="{ active: editor.isActive('taskList') }" title="Task list">
+            <button type="button" @click="editor.chain().focus().toggleTaskList().run()" :class="{ active: editor.isActive('taskList') }" title="Task list">
                 ☑
             </button>
 
             <span class="divider" />
 
-            <button @click="editor.chain().focus().toggleCodeBlock().run()" :class="{ active: editor.isActive('codeBlock') }" title="Code block">
+            <button type="button" @click="editor.chain().focus().toggleCodeBlock().run()" :class="{ active: editor.isActive('codeBlock') }" title="Code block">
                 &lt;/&gt;
             </button>
-            <button @click="editor.chain().focus().toggleBlockquote().run()" :class="{ active: editor.isActive('blockquote') }" title="Quote">
+            <button type="button" @click="editor.chain().focus().toggleBlockquote().run()" :class="{ active: editor.isActive('blockquote') }" title="Quote">
                 "
             </button>
 
             <span class="divider" />
 
-            <button @click="insertTable" title="Table">
+            <button type="button" @click="insertTable" title="Таблица">
                 ⊞
+            </button>
+
+            <!-- Ссылка -->
+            <button
+                type="button"
+                @click="setLink"
+                :class="{ active: editor.isActive('link') }"
+                title="Ссылка (Ctrl+K)"
+            >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                </svg>
+            </button>
+            <button
+                v-if="editor.isActive('link')"
+                type="button"
+                @click="editor.chain().focus().unsetLink().run()"
+                title="Убрать ссылку"
+                class="text-red-500 hover:text-red-700"
+            >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
             </button>
 
             <span class="ml-auto text-xs text-gray-400 self-center pr-2">
@@ -74,6 +100,7 @@ import { TableRow } from '@tiptap/extension-table-row'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { Link } from '@tiptap/extension-link'
+import Image from '@tiptap/extension-image'
 
 const props = defineProps({
     modelValue: {
@@ -106,6 +133,7 @@ const editor = useEditor({
         TableHeader,
         TableCell,
         Link.configure({ openOnClick: false }),
+        Image,
     ],
     onUpdate: ({ editor }) => {
         emit('update:modelValue', editor.getJSON())
@@ -132,12 +160,28 @@ const insertTable = () => {
         .run()
 }
 
+const setLink = () => {
+    const prev = editor.value?.getAttributes('link').href ?? ''
+    const url = window.prompt('URL ссылки:', prev)
+    if (url === null) return // отмена
+    if (url === '') {
+        editor.value?.chain().focus().unsetLink().run()
+        return
+    }
+    const href = url.startsWith('http') ? url : 'https://' + url
+    editor.value?.chain().focus().extendMarkRange('link').setLink({ href, target: '_blank' }).run()
+}
+
 onBeforeUnmount(() => editor.value?.destroy())
 </script>
 
 <style>
 .tiptap-wrapper {
     @apply border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500;
+}
+
+.tiptap-view {
+    @apply overflow-hidden;
 }
 
 .tiptap-toolbar {
@@ -156,8 +200,12 @@ onBeforeUnmount(() => editor.value?.destroy())
     @apply w-px h-5 bg-gray-300 mx-1;
 }
 
-.tiptap-content .ProseMirror {
+.tiptap-wrapper .tiptap-content .ProseMirror {
     @apply p-4 min-h-64 outline-none;
+}
+
+.tiptap-view .tiptap-content .ProseMirror {
+    @apply outline-none;
 }
 
 .tiptap-content .ProseMirror p.is-editor-empty:first-child::before {

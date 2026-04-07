@@ -1,5 +1,6 @@
 <template>
-    <AppLayout :spaces="spaces">
+    <Head><title>Все разделы</title></Head>
+    <AppLayout>
         <template #breadcrumbs>
             <span class="text-sm text-gray-500 font-medium">Все разделы</span>
         </template>
@@ -45,7 +46,8 @@
                     </div>
                     <div class="flex items-center gap-3 mt-4 text-xs text-gray-400">
                         <span>{{ space.pages_count }} стр.</span>
-                        <span v-if="!space.is_public" class="flex items-center gap-1">🔒 Приватный</span>
+                        <span v-if="space.visibility === 'restricted'" class="flex items-center gap-1">🔒 Группы</span>
+                        <span v-else-if="space.visibility === 'private'" class="flex items-center gap-1">🔒 Приватный</span>
                         <span class="ml-auto">{{ space.owner.name }}</span>
                     </div>
                 </Link>
@@ -55,7 +57,7 @@
 </template>
 
 <script setup>
-import { Link } from '@inertiajs/vue3'
+import { Head, Link } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 defineProps({

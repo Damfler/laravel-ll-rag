@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Space;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -33,6 +34,17 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+            ],
+            // Список разделов для сайдбара (ленивая загрузка)
+            'spaces' => fn () => $request->user()
+                ? Space::accessibleBy($request->user())
+                    ->latest()
+                    ->get(['id', 'name', 'slug', 'icon', 'color'])
+                : [],
+            // Flash-сообщения
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error'   => fn () => $request->session()->get('error'),
             ],
         ];
     }

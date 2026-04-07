@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Admin\GroupController as AdminGroupController;
+use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SearchController;
@@ -36,7 +38,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('/pages/{page}', [PageController::class, 'update'])->name('update');
         Route::delete('/pages/{page}', [PageController::class, 'destroy'])->name('destroy');
         Route::get('/pages/{page}/history', [PageController::class, 'history'])->name('history');
+        Route::get('/pages/{page}/diff', [PageController::class, 'diff'])->name('diff');
+        Route::post('/pages/{page}/restore/{version}', [PageController::class, 'restore'])
+            ->name('restore')
+            ->scopeBindings();
     });
 });
+
+// ─── Панель администратора ────────────────────────────────────────────────────
+Route::middleware(['auth', 'verified', 'role:admin'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/', fn () => redirect()->route('admin.users.index'));
+        Route::resource('users', AdminUserController::class);
+        Route::resource('groups', AdminGroupController::class);
+    });
 
 require __DIR__.'/auth.php';

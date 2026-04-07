@@ -2,6 +2,7 @@
 
 namespace App\Models\Concerns;
 
+use App\Models\Group;
 use App\Models\Role;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
@@ -10,6 +11,11 @@ trait HasRoles
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class);
+    }
+
+    public function groups(): BelongsToMany
+    {
+        return $this->belongsToMany(Group::class);
     }
 
     public function hasRole(string $role): bool
