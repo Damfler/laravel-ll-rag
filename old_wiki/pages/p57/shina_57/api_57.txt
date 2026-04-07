@@ -1,0 +1,46 @@
+
+----
+https://home.protektor57.ru/market_api/ozon/
+
+В GET необходимо передавать следующие поля:
+|	provider
+|	delivery
+|	samogon
+|	margin
+|	perc_ozon
+|	summ_margin
+|	margin_mini
+|	proiritet1
+|	proiritet2
+
+Provider передается либо provider[]=1& provider[]=2, либо provider=1,2.
+
+Поля delivery, samogon, margin, perc_ozon, summ_margin, margin_mini нужны для формул:
+Если цена > 8500 - ((ЦЕНА + $delivery + $samogon) * $margin) * $perc_ozon
+Если цена < 8500 - (ЦЕНА + $summ_margin) * $margin_mini
+
+Приоритеты передают: proiritet1=1,2,3,4& proiritet2=1,2,3,4
+
+Если какие-то поля не заполнены, выводит ошибку с названием этого поля
+
+По итогу получаем JSON с структурой:
+"S057780": {
+    "PRICE": 4074, - цена
+    "COUNT": "1", - кол-во со всех складов
+    "PRICE_SITE": 4074, - цена на сайте
+    "DETAIL": { - список всех складов
+      "9": {
+        "PRIORITY": 1, - приоритет склада
+        "COUNT": "1", - кол-во на этом складе
+        "PRICE": 3704 - стоимость
+      }
+    },
+    "PRICE_SALE": 4488, - продажная цена
+    "OLD_PRICE": 4802 - старая цена
+  },
+
+
+
+
+
+----
